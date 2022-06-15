@@ -1,0 +1,19 @@
+port: PORT
+testmode: TESTMODE
+arweave:
+  host: ARWEAVE_HOST
+  port: ARWEAVE_PORT
+  protocol: ARWEAVE_PROTOCOL
+  key: ARWEAVE_KEY
+
+s3:
+  protocol: S3_PROTOCOL
+  host: S3_HOST
+  port: S3_PORT
+  key: S3_KEY
+  secret: S3_SECRET
+  bucket: S3_BUCKET
+
+log:
+  level: LOG_LEVEL
+  sendLogsTo: LOGSTASH_URL
