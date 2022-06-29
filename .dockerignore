@@ -1,0 +1,8 @@
+node_modules/
+Dockerfile
+keystore/
+dist/
+.git/
+.gitignore
+.dockerignore
+_local/
