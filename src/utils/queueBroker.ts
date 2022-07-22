@@ -1,7 +1,16 @@
-import { Connection, Channel, ConsumeMessage, connect, Options } from 'amqplib';
+import {
+  Connection,
+  Channel,
+  ConsumeMessage,
+  connect,
+  Options,
+  Replies,
+} from 'amqplib';
 import config from 'config';
 import { log } from './logger';
 import { safeStringify } from './safeStringify';
+
+const MAX_CONCURRENCY = config.get('max_concurrency');
 
 const queueCfg: { url: string } | undefined = config.get('queue');
 interface QueueBrokerOptions {
@@ -31,6 +40,8 @@ export class QueueBroker {
     log.info('Connected to queue');
     this.rxChannel = await this.connection.createChannel();
     this.txChannel = await this.connection.createChannel();
+    this.rxChannel.prefetch(MAX_CONCURRENCY);
+    this.txChannel.prefetch(MAX_CONCURRENCY);
     resolver();
   }
 
@@ -50,6 +61,55 @@ export class QueueBroker {
     log.info(`Subscribing to queue ${queueName}`);
     await this.rxChannel?.assertQueue(queueName);
     await this.rxChannel?.consume(queueName, handler);
+  }
+
+  async subscribeDelayed(
+    queueName: string,
+    handler: (msg: ConsumeMessage | null) => void
+  ) {
+    await this.ready;
+    log.info(`Subscribing to delayed queue ${queueName}`);
+    const exchangeDLX = `${queueName}ExDLX`;
+    const routingKeyDLX = `${queueName}RoutingKeyDLX`;
+    const queueDLX = `${queueName}QueueDLX`;
+    await this.rxChannel?.assertExchange(exchangeDLX, 'direct', {
+      durable: true,
+    });
+    const queueResult = (await this.rxChannel?.assertQueue(queueDLX, {
+      exclusive: false,
+    })) as Replies.AssertQueue;
+
+    await this.rxChannel?.bindQueue(
+      queueResult.queue,
+      exchangeDLX,
+      routingKeyDLX
+    );
+    await this.rxChannel?.consume(queueResult.queue, handler);
+  }
+
+  async sendDelayedMessage(
+    queueName: string,
+    content: Record<any, any>,
+    delay: number
+  ) {
+    const exchange = `${queueName}Ex`;
+    const queue = `${queueName}Queue`;
+    const exchangeDLX = `${queueName}ExDLX`;
+    const routingKeyDLX = `${queueName}RoutingKeyDLX`;
+    await this.txChannel?.assertExchange(exchange, 'direct', { durable: true });
+    const queueResult = (await this.txChannel?.assertQueue(queue, {
+      exclusive: false,
+      deadLetterExchange: exchangeDLX,
+      deadLetterRoutingKey: routingKeyDLX,
+    })) as Replies.AssertQueue;
+    await this.txChannel?.bindQueue(queueResult.queue, exchange, '');
+    await this.txChannel?.sendToQueue(
+      queueResult.queue,
+      Buffer.from(JSON.stringify(content)),
+      {
+        expiration: delay,
+      }
+    );
   }
 
   async sendMessage(
