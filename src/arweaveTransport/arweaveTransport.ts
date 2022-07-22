@@ -31,12 +31,7 @@ async function broadcastTx(transaction) {
 
 export async function sendChunk({ chunkId, fileContent, tags }) {
   const transaction = await signTx(fileContent, tags);
-  log.info(
-    `For chunkId: ${chunkId} transaction ${transaction.id} has been signed`
-  );
   const { id: txid } = await broadcastTx(transaction);
-  log.info(
-    `For chunkId: ${chunkId} transaction ${transaction.id} has been broadcasted`
-  );
+  log.info(`Broadcasted txid: ${txid} for chunkId: ${chunkId}`);
   return { txid };
 }
