@@ -7,26 +7,65 @@ import {
   Replies,
 } from 'amqplib';
 import config from 'config';
+import {
+  MILLISECONDS_IN_SECOND,
+  SECONDS_IN_MINUTE,
+} from './fromMinutesToMilliseconds';
 import { log } from './logger';
 import { safeStringify } from './safeStringify';
 
-const MAX_CONCURRENCY = config.get('max_concurrency');
+const WORK_PREFIX = 'work';
+const LOBBY_PREFIX = 'lobby';
 
 const queueCfg: { url: string } | undefined = config.get('queue');
 interface QueueBrokerOptions {
   url?: string;
 }
 
+export interface QueueInfo {
+  consumerTag?: string;
+  channel: Channel;
+  queue: Replies.AssertQueue;
+  queueId: string;
+  subscription?: {
+    name: string;
+    options: ConsumerQueueCfg;
+    isPaused: boolean;
+    isDelayed: boolean;
+  };
+}
+
+export type HandlerFactory = (
+  queueInfo: QueueInfo
+) => (msg: ConsumeMessage | null) => void;
+
+export interface ConsumerQueueCfg {
+  handlerFactory: HandlerFactory;
+  maxConcurrency?: number;
+}
+
+export interface DelayedQueueCfg {
+  ttl: number;
+}
+
 const defaultOptions = { url: 'amqp://localhost' };
 
 let resolver;
 
+function scheduleCheck(healthCheckFunc, interval) {
+  const timeoutId = setTimeout(async () => {
+    if (await healthCheckFunc!()) {
+      clearTimeout(timeoutId);
+    } else {
+      scheduleCheck(healthCheckFunc, interval);
+    }
+  }, interval);
+}
+
 export class QueueBroker {
   connection?: Connection;
 
-  rxChannel?: Channel;
-
-  txChannel?: Channel;
+  channelsByQueueName: Record<string, QueueInfo> = Object.create(null);
 
   ready = new Promise((res) => {
     resolver = res;
@@ -38,78 +77,181 @@ export class QueueBroker {
     const queueUrl = this.options.url as string;
     this.connection = await connect(queueUrl);
     log.info('Connected to queue');
-    this.rxChannel = await this.connection.createChannel();
-    this.txChannel = await this.connection.createChannel();
-    this.rxChannel.prefetch(MAX_CONCURRENCY);
-    this.txChannel.prefetch(MAX_CONCURRENCY);
     resolver();
   }
 
-  async ack(msg) {
-    return this.rxChannel?.ack(msg);
-  }
-
-  async nack(msg, requeue: boolean) {
-    return this.rxChannel?.nack(msg, false, requeue);
-  }
-
-  async subscribe(
-    queueName: string,
-    handler: (msg: ConsumeMessage | null) => void
+  async pause(
+    queueInfo: QueueInfo,
+    {
+      healthCheckFunc,
+      healthCheckInterval,
+    }: {
+      healthCheckFunc?: () => Promise<boolean>;
+      healthCheckInterval?: number;
+    } = {
+      healthCheckInterval: 5,
+    }
   ) {
-    await this.ready;
-    log.info(`Subscribing to queue ${queueName}`);
-    await this.rxChannel?.assertQueue(queueName);
-    await this.rxChannel?.consume(queueName, handler);
+    const { channel, consumerTag, queueId, subscription } = queueInfo;
+    const isPaused = subscription?.isPaused;
+    if (!isPaused && consumerTag) {
+      this.channelsByQueueName[queueId].subscription!.isPaused = true;
+      await channel.cancel(consumerTag);
+      scheduleCheck(
+        healthCheckFunc,
+        healthCheckInterval! * MILLISECONDS_IN_SECOND * SECONDS_IN_MINUTE
+      );
+      log.info(
+        'Worker has been paused until healtcheck is succesful. Current messages will be processed but no new messages will be received'
+      );
+      return true;
+    }
+    return false;
   }
 
-  async subscribeDelayed(
-    queueName: string,
-    handler: (msg: ConsumeMessage | null) => void
-  ) {
-    await this.ready;
-    log.info(`Subscribing to delayed queue ${queueName}`);
-    const exchangeDLX = `${queueName}ExDLX`;
-    const routingKeyDLX = `${queueName}RoutingKeyDLX`;
-    const queueDLX = `${queueName}QueueDLX`;
-    await this.rxChannel?.assertExchange(exchangeDLX, 'direct', {
-      durable: true,
-    });
-    const queueResult = (await this.rxChannel?.assertQueue(queueDLX, {
-      exclusive: false,
-    })) as Replies.AssertQueue;
+  async resume(queueInfo: QueueInfo) {
+    const { subscription } = queueInfo;
+    const isPaused = subscription?.isPaused;
+    if (
+      !subscription ||
+      (subscription && !isPaused) ||
+      !(typeof subscription.options.handlerFactory === 'function')
+    ) {
+      return false;
+    }
+    const { name, options } = subscription;
+    await (subscription.isDelayed
+      ? this.subscribeDelayed(name, options)
+      : this.subscribe(name, options));
+    return true;
+  }
 
-    await this.rxChannel?.bindQueue(
-      queueResult.queue,
-      exchangeDLX,
-      routingKeyDLX
+  async ensureChannelAndQueue(
+    name: string,
+    options?: ConsumerQueueCfg
+  ): Promise<QueueInfo> {
+    await this.ready;
+    if (!this.channelsByQueueName[name]) {
+      const channel = await this.connection!.createChannel();
+      const queue = await channel.assertQueue(name);
+      if (options?.maxConcurrency) {
+        channel.prefetch(options.maxConcurrency);
+      }
+      this.channelsByQueueName[name] = {
+        channel,
+        queue,
+        queueId: name,
+      };
+    }
+    return this.channelsByQueueName[name];
+  }
+
+  async ensureChannelAndDelayedQueue(name: string, options?: ConsumerQueueCfg) {
+    const nameWithPrefix = `${WORK_PREFIX}--${name}`;
+    await this.ready;
+    if (!this.channelsByQueueName[nameWithPrefix]) {
+      const channel = await this.connection!.createChannel();
+      if (options?.maxConcurrency) {
+        channel.prefetch(options.maxConcurrency);
+      }
+      const exchangeDLX = `${name}ExDLX`;
+      const routingKeyDLX = `${name}RoutingKeyDLX`;
+      const queueDLX = `${name}Work`;
+      await channel.assertExchange(exchangeDLX, 'direct', {
+        durable: true,
+      });
+      const queue = (await channel.assertQueue(queueDLX, {
+        exclusive: false,
+      })) as Replies.AssertQueue;
+      await channel.bindQueue(queue.queue, exchangeDLX, routingKeyDLX);
+      this.channelsByQueueName[nameWithPrefix] = {
+        channel,
+        queue,
+        queueId: nameWithPrefix,
+      };
+    }
+    return this.channelsByQueueName[nameWithPrefix];
+  }
+
+  async subscribe(queueName: string, options: ConsumerQueueCfg) {
+    const { handlerFactory } = options;
+    const queueInfo = await this.ensureChannelAndQueue(queueName, options);
+    const { channel, queue, queueId } = queueInfo;
+    log.info(`Subscribing to queue ${queue.queue}`);
+    const { consumerTag } = await channel.consume(
+      queue.queue,
+      handlerFactory(queueInfo)
     );
-    await this.rxChannel?.consume(queueResult.queue, handler);
+    this.channelsByQueueName[queueId].consumerTag = consumerTag;
+    this.channelsByQueueName[queueId].subscription = {
+      name: queueName,
+      options,
+      isPaused: false,
+      isDelayed: false,
+    };
+  }
+
+  async subscribeDelayed(queueName: string, options: ConsumerQueueCfg) {
+    const queueInfo = await this.ensureChannelAndDelayedQueue(
+      queueName,
+      options
+    );
+    const { channel, queue, queueId } = queueInfo;
+    const { handlerFactory } = options;
+    log.info(`Subscribing to delayed queue ${queue.queue}`);
+    const { consumerTag } = await channel.consume(
+      queue.queue,
+      handlerFactory(queueInfo)
+    );
+    this.channelsByQueueName[queueId].consumerTag = consumerTag;
+    this.channelsByQueueName[queueId].subscription = {
+      name: queueName,
+      options,
+      isPaused: false,
+      isDelayed: true,
+    };
+  }
+
+  async ensureChannelAndLobby(name: string, options?: ConsumerQueueCfg) {
+    const nameWithPrefix = `${LOBBY_PREFIX}--${name}`;
+    await this.ready;
+    if (!this.channelsByQueueName[nameWithPrefix]) {
+      const channel = await this.connection!.createChannel();
+      if (options?.maxConcurrency) {
+        channel.prefetch(options.maxConcurrency);
+      }
+      const exchange = `${name}Exchange`;
+      const queueName = `${name}Lobby`;
+      const exchangeDLX = `${name}ExDLX`;
+      const routingKeyDLX = `${name}RoutingKeyDLX`;
+      await channel.assertExchange(exchange, 'direct', {
+        durable: true,
+      });
+      const queue = (await channel?.assertQueue(queueName, {
+        exclusive: false,
+        deadLetterExchange: exchangeDLX,
+        deadLetterRoutingKey: routingKeyDLX,
+      })) as Replies.AssertQueue;
+      await channel?.bindQueue(queue.queue, exchange, '');
+      this.channelsByQueueName[nameWithPrefix] = {
+        channel,
+        queue,
+        queueId: nameWithPrefix,
+      };
+    }
+    return this.channelsByQueueName[nameWithPrefix];
   }
 
   async sendDelayedMessage(
     queueName: string,
     content: Record<any, any>,
-    delay: number
+    options: DelayedQueueCfg
   ) {
-    const exchange = `${queueName}Ex`;
-    const queue = `${queueName}Queue`;
-    const exchangeDLX = `${queueName}ExDLX`;
-    const routingKeyDLX = `${queueName}RoutingKeyDLX`;
-    await this.txChannel?.assertExchange(exchange, 'direct', { durable: true });
-    const queueResult = (await this.txChannel?.assertQueue(queue, {
-      exclusive: false,
-      deadLetterExchange: exchangeDLX,
-      deadLetterRoutingKey: routingKeyDLX,
-    })) as Replies.AssertQueue;
-    await this.txChannel?.bindQueue(queueResult.queue, exchange, '');
-    await this.txChannel?.sendToQueue(
-      queueResult.queue,
-      Buffer.from(JSON.stringify(content)),
-      {
-        expiration: delay,
-      }
-    );
+    const { channel, queue } = await this.ensureChannelAndLobby(queueName);
+    const queueId = options.ttl === 0 ? `${queueName}Work` : queue.queue;
+    return channel.sendToQueue(queueId, Buffer.from(JSON.stringify(content)), {
+      ...(options.ttl > 0 ? { expiration: options.ttl } : {}),
+    });
   }
 
   async sendMessage(
@@ -117,12 +259,12 @@ export class QueueBroker {
     content: Record<any, any>,
     options?: Options.Publish
   ) {
-    await this.ready;
+    const { channel, queue } = await this.ensureChannelAndQueue(queueName);
     log.info(
       `Sending message to ${queueName} with content ${safeStringify(content)}`
     );
-    return this.txChannel?.sendToQueue(
-      queueName,
+    return channel.sendToQueue(
+      queue.queue,
       Buffer.from(JSON.stringify(content)),
       options
     );

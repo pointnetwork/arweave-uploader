@@ -26,6 +26,7 @@ log:
 queue:
   url: amqp://localhost
 
-max_concurrency: 10
-arweave_upload_min_retry_time: 1
-arweave_upload_max_retry_time: 5
+arweave_uploader:
+  max_concurrency: 50
+  requeue_after_error_time: 5
+  check_tx_delay: 20
