@@ -21,6 +21,7 @@ process.on('uncaughtException', function (error: any) {
     log.error(
       'Logger error connection has failed. It will not exit the process'
     );
+    process.exit(1);
   } else {
     log.error(`Uncaught error: ${safeStringify(error)}`);
     process.exit(1);
