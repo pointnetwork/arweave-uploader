@@ -1,4 +1,4 @@
-// npx ts-node ./src/demo/enqueueFileToUpload.ts
+// npx ts-node ./src/demo/enqueueFileToUpload.ts ${chunkId}
 import { queueBroker } from '../utils/queueBroker';
 
 const chunkId = process.argv[2];

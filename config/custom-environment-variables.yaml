@@ -20,3 +20,6 @@ log:
 
 queue:
   url: QUEUE_URL
+  hostname: QUEUE_HOST
+  username: QUEUE_USER
+  password: QUEUE_PASSWORD

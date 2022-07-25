@@ -17,9 +17,13 @@ import { safeStringify } from './safeStringify';
 const WORK_PREFIX = 'work';
 const LOBBY_PREFIX = 'lobby';
 
-const queueCfg: { url: string } | undefined = config.get('queue');
+const queueCfg: QueueBrokerOptions | undefined = config.get('queue');
+
 interface QueueBrokerOptions {
   url?: string;
+  hostname?: string;
+  username?: string;
+  password?: string;
 }
 
 export interface QueueInfo {
@@ -74,8 +78,21 @@ export class QueueBroker {
   constructor(private options: QueueBrokerOptions = defaultOptions) {}
 
   async connect() {
+    const useUrl = !(
+      this.options.username &&
+      this.options.password &&
+      this.options.hostname
+    );
     const queueUrl = this.options.url as string;
-    this.connection = await connect(queueUrl);
+    this.connection = await connect(
+      useUrl
+        ? queueUrl
+        : {
+            username: this.options.username,
+            password: this.options.password,
+            hostname: this.options.hostname,
+          }
+    );
     log.info('Connected to queue');
     resolver();
   }
