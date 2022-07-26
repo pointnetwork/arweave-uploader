@@ -29,6 +29,16 @@ async function broadcastTx(transaction) {
   return transaction;
 }
 
+export async function getBalance() {
+  const publicAddress = await arweave.wallets.jwkToAddress(key);
+  const balance = await arweave.wallets.getBalance(publicAddress);
+  return { winston: balance, ar: arweave.ar.winstonToAr(balance) };
+}
+
+export async function getPrice(size: number) {
+  return arweave.transactions.getPrice(size);
+}
+
 export async function sendChunk({ chunkId, fileContent, tags }) {
   const transaction = await signTx(fileContent, tags);
   const { id: txid } = await broadcastTx(transaction);

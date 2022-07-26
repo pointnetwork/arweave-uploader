@@ -27,6 +27,7 @@ queue:
   url: amqp://localhost
 
 arweave_uploader:
-  max_concurrency: 20
+  max_concurrency: 1
   requeue_after_error_time: 5
   check_tx_delay: 20
+  health_check_interval: 5
