@@ -1,10 +1,13 @@
 import config from 'config';
 import axios from 'axios';
-import { arweaveUploaderFactory } from './arweaveUploader';
+import {
+  arweaveReUploaderFactory,
+  arweaveUploaderFactory,
+} from './arweaveUploader';
 import { queueBroker } from './utils/queueBroker';
 import './healthServer';
 import { log } from './utils/logger';
-import { UPLOAD_TO_ARWEAVE } from './utils/queueNames';
+import { UPLOAD_TO_ARWEAVE, REUPLOAD_TO_ARWEAVE } from './utils/queueNames';
 import { safeStringify } from './utils/safeStringify';
 import { fromMinutesToMilliseconds } from './utils/fromMinutesToMilliseconds';
 
@@ -14,13 +17,15 @@ export async function main() {
     handlerFactory: arweaveUploaderFactory,
     maxConcurrency: config.get('arweave_uploader.max_concurrency'),
   });
+  await queueBroker.subscribeDelayed(REUPLOAD_TO_ARWEAVE, {
+    handlerFactory: arweaveReUploaderFactory,
+    maxConcurrency: 1,
+  });
 }
 
 process.on('uncaughtException', function (error: any) {
   if (error?.code !== 'ENETDOWN') {
-    log.error(
-      'Logger error connection has failed. It will not exit the process'
-    );
+    log.error('Logger error connection has failed. It will exit the process');
     process.exit(1);
   } else {
     log.error(`Uncaught error: ${safeStringify(error)}`);
