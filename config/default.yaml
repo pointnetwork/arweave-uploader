@@ -1,5 +1,6 @@
 port: 80
 testmode: 0
+keep_alive_interval: 1
 arweave:
   host: arweave.net
   port: 443
@@ -27,10 +28,8 @@ queue:
   url: amqp://localhost
 
 arweave_uploader:
-  max_concurrency: 200
+  max_concurrency: 500 # this is the amount of files per bundle
   requeue_after_error_time: 5
-  check_tx_delay: 20Creating bundle for chunkIds
-  health_check_interval: 5
-  min_bundle_creation_interval: 10
-  verify_bundled_tx_interval: 5
+  health_check_interval: 1
+  verify_bundled_tx_interval: 15
   verify_bundled_chunk_ids_interval: 60

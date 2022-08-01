@@ -1,8 +1,8 @@
 import pino from 'pino';
-import UdpTransport from 'pino-udp';
 import { multistream } from 'pino-multi-stream';
 import ecsFormat from '@elastic/ecs-pino-format';
 import { noop } from './noop';
+import { createUdpStream } from './createUdpStream';
 
 const logCfg: { level: string; sendLogsTo: string } = {
   level: 'info',
@@ -18,7 +18,7 @@ let sendMetric = noop as Function;
 
 if (sendLogsTo) {
   const [address, port] = (sendLogsTo.split('://').pop() as string).split(':');
-  const udpTransport = new UdpTransport({ address, port });
+  const udpTransport = createUdpStream({ address, port: +port });
   streams.push(udpTransport);
   sendMetric = function (
     this: any,

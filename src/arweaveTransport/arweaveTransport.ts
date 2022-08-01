@@ -1,5 +1,6 @@
 import config from 'config';
 import { bundleAndSignData, createData, signers } from 'arbundles';
+import base64url from 'base64url';
 import { arweave } from './arweave';
 import { log } from '../utils/logger';
 
@@ -13,17 +14,6 @@ const key = JSON.parse(config.get('arweave.key'));
 const { ArweaveSigner } = signers;
 
 const signer = new ArweaveSigner(key);
-
-/*
-let data = fs.readFileSync('path/to/file.pdf'); // get the same data
-let resumeTxId = 'mytxid' // a transaction id for a mined transaction that didn't complete the upload.
-
-let uploader = await arweave.transactions.getUploader(resumeTxId, data);
-while (!uploader.isComplete) {
-  await uploader.uploadChunk();
-  console.log(`${uploader.pctComplete}% complete`);
-}
-*/
 
 export async function broadcastTx(transaction, data: Buffer | null = null) {
   let uploader;
@@ -103,4 +93,11 @@ export async function sendChunk({ chunkId, fileContent, tags }) {
   const { id: txid } = await broadcastTx(transaction);
   log.info(`Broadcasted txid: ${txid} for chunkId: ${chunkId}`);
   return { txid };
+}
+
+export function signWithExistingSignature(dataItem, signature) {
+  dataItem.getRaw().set(base64url.toBuffer(signature), 2);
+  // eslint-disable-next-line no-self-assign, no-param-reassign
+  dataItem.id = dataItem.id;
+  return dataItem;
 }
