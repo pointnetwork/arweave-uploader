@@ -12,6 +12,7 @@ import {
   SECONDS_IN_MINUTE,
 } from './fromMinutesToMilliseconds';
 import { log } from './logger';
+import { safeStringify } from './safeStringify';
 
 const WORK_PREFIX = 'work';
 const LOBBY_PREFIX = 'lobby';
@@ -23,6 +24,7 @@ interface QueueBrokerOptions {
   hostname?: string;
   username?: string;
   password?: string;
+  port?: string;
 }
 
 export interface QueueInfo {
@@ -90,6 +92,7 @@ export class QueueBroker {
             username: this.options.username,
             password: this.options.password,
             hostname: this.options.hostname,
+            port: +(this.options.port || 5672),
           }
     );
     log.info('Connected to queue');
@@ -292,7 +295,11 @@ async function connectQueue() {
   try {
     await queueBroker.connect();
   } catch (error: any) {
-    log.error('Cannot connect to queue, check connectivity. Exiting process');
+    log.error(
+      `Cannot connect to queue, due to error: ${safeStringify(
+        error
+      )}. Exiting process`
+    );
     process.exit(1);
   }
 }
