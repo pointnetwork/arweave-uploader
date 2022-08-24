@@ -17,6 +17,7 @@
     "no-useless-constructor": "off",
     "@typescript-eslint/no-useless-constructor": ["error"],
     "no-restricted-syntax": "off",
-    "class-methods-use-this": "off"
+    "class-methods-use-this": "off",
+    "@typescript-eslint/no-non-null-assertion": "off"
   }
 }
