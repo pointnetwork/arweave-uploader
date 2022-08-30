@@ -18,7 +18,7 @@ jobs:
           heroku_app_name: arweave-uploader-prod
           heroku_email: ${{secrets.HEROKU_EMAIL}}
           healthcheck: "https://arweave-uploader-prod.herokuapp.com/health"
-          delay: 5
+          delay: 10
           usedocker: true
 
         env:
