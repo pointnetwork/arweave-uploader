@@ -21,7 +21,11 @@ async function pushToVerifierQueue(s3Objects: ObjectList) {
   for (const { Key } of s3Objects) {
     const isValidChunkId = Key?.length === 64;
     if (isValidChunkId) {
-      await queueBroker.sendMessage('verifyChunkId', createMessage(Key));
+      await queueBroker.sendDelayedMessage(
+        'verifyChunkId',
+        createMessage(Key),
+        { ttl: 0 }
+      );
       console.log(`Chunkid: ${Key} was enqueue to verify`);
     } else {
       console.log(`Object with: ${Key} is not valid chunkId, skipping it`);
@@ -39,6 +43,4 @@ async function getAndPushObject(nextMarker?: string) {
   }
 }
 
-getAndPushObject(
-  'ffffdfbb8067c3202d5b98fb02a17173008788b0c031a51117a2a1d21bfa9569'
-);
+getAndPushObject();
