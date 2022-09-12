@@ -39,6 +39,7 @@
     "bip39": "^3.0.4",
     "cheerio": "^1.0.0-rc.10",
     "config": "^3.3.7",
+    "ethereumjs-util": "^7.1.5",
     "fastify": "^4.0.2",
     "pino": "^7.11.0",
     "pino-multi-stream": "^6.0.0",
