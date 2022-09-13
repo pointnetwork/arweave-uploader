@@ -26,7 +26,7 @@ async function pushToVerifierQueue(s3Objects: ObjectList) {
         createMessage(Key),
         { ttl: 0 }
       );
-      console.log(`Chunkid: ${Key} was enqueue to verify`);
+      console.log(`Chunkid: ${Key} was enqueue to be verified`);
     } else {
       console.log(`Object with: ${Key} is not valid chunkId, skipping it`);
     }
