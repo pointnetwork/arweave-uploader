@@ -168,7 +168,7 @@ export function arweaveUploaderFactory(queueInfo: QueueInfo) {
         return channel.ack(msg!);
       }
       const signedDataItem = await createBundleData(file.Body, fields);
-      addItem(chunkId, {
+      const added = addItem(chunkId, {
         signedDataItem,
         channel,
         msg,
@@ -176,6 +176,10 @@ export function arweaveUploaderFactory(queueInfo: QueueInfo) {
         contentLength,
         fields,
       });
+      if (!added) {
+        log.info(`Skipping repetead chunkId:${chunkId} already in bundle`);
+        return channel.ack(msg!);
+      }
       if (
         itemsPoolLength() >= BUNDLE_SIZE
         // getItemsAge() > fromMinutesToMilliseconds(5)

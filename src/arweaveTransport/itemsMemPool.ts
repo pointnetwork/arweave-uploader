@@ -9,7 +9,11 @@ export function addItem(key, item) {
   if (itemsPoolLength() === 0) {
     firstItemDate = Date.now();
   }
+  if (items[key]) {
+    return false;
+  }
   items[key] = item;
+  return true;
 }
 
 export function getItemsAge() {
