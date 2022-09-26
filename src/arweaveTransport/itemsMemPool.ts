@@ -17,7 +17,7 @@ export function addItem(key, item) {
 }
 
 export function getItemsAge() {
-  return Date.now() - firstItemDate;
+  return firstItemDate ? Date.now() - firstItemDate : 0;
 }
 
 export function getAllMemPoolItems() {

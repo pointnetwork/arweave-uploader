@@ -33,3 +33,4 @@ arweave_uploader:
   health_check_interval: 1
   verify_bundled_tx_interval: 15
   verify_bundled_chunk_ids_interval: 60
+  bundle_timeout: 360 # 6hs

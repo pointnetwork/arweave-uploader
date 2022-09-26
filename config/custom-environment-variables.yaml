@@ -5,6 +5,7 @@ arweave:
   port: ARWEAVE_PORT
   protocol: ARWEAVE_PROTOCOL
   key: ARWEAVE_KEY
+  bundle_timeout: ARWEAVE_BUNDLE_TIMEOUT_MINUTES
 
 s3:
   protocol: S3_PROTOCOL
