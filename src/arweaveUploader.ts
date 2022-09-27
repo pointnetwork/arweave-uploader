@@ -24,7 +24,7 @@ import { fromMinutesToMilliseconds } from './utils/fromMinutesToMilliseconds';
 import {
   addItem,
   getAllMemPoolItems,
-  // getItemsAge,
+  getItemsAge,
   itemsPoolLength,
 } from './arweaveTransport/itemsMemPool';
 
@@ -152,6 +152,24 @@ async function bundleItems(queueInfo) {
   }
 }
 
+let bundleTimeout;
+
+export async function verifyBundleState(queueInfo) {
+  const bundleTimeoutMs = fromMinutesToMilliseconds(
+    config.get('arweave_uploader.requeue_after_error_time')
+  );
+  if (itemsPoolLength() >= BUNDLE_SIZE || getItemsAge() > bundleTimeoutMs) {
+    if (bundleTimeout) {
+      clearTimeout(bundleTimeout);
+    }
+    await bundleItems(queueInfo);
+  } else if (!bundleTimeout)
+    bundleTimeout = setTimeout(() => {
+      bundleTimeout = null;
+      verifyBundleState(queueInfo);
+    }, bundleTimeoutMs - getItemsAge());
+}
+
 export function arweaveUploaderFactory(queueInfo: QueueInfo) {
   const { channel } = queueInfo;
   return async function arweaveUploader(msg: ConsumeMessage | null) {
@@ -180,12 +198,7 @@ export function arweaveUploaderFactory(queueInfo: QueueInfo) {
         log.info(`Skipping repetead chunkId:${chunkId} already in bundle`);
         return channel.ack(msg!);
       }
-      if (
-        itemsPoolLength() >= BUNDLE_SIZE
-        // getItemsAge() > fromMinutesToMilliseconds(5)
-      ) {
-        await bundleItems(queueInfo);
-      }
+      await verifyBundleState(queueInfo);
       return;
     } catch (error: any) {
       if (error?.code === 'NoSuchKey') {
