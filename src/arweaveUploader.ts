@@ -156,7 +156,7 @@ let bundleTimeout;
 
 export async function verifyBundleState(queueInfo) {
   const bundleTimeoutMs = fromMinutesToMilliseconds(
-    config.get('arweave_uploader.requeue_after_error_time')
+    config.get('arweave_uploader.bundle_timeout')
   );
   if (itemsPoolLength() >= BUNDLE_SIZE || getItemsAge() > bundleTimeoutMs) {
     if (bundleTimeout) {
